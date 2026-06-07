@@ -1,8 +1,10 @@
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = (window.API_CONFIG && window.API_CONFIG.baseUrl) || '/api';
 
 class App {
   constructor() {
     this.currentPage = 'devices';
+    this.devices = [];
+    this.rentalOrders = [];
     this.init();
   }
 
@@ -132,11 +134,14 @@ class App {
       'completed': { class: 'badge-green', text: '已完成' },
       'confirmed': { class: 'badge-green', text: '已确认' },
       'archived': { class: 'badge-gray', text: '已归档' },
-      'draft': { class: 'badge-gray', text: '草稿' }
+      'draft': { class: 'badge-gray', text: '草稿' },
+      'available': { class: 'badge-green', text: '可用' },
+      'out': { class: 'badge-blue', text: '已出库' }
     };
     const config = statusMap[status] || { class: 'badge-gray', text: status };
     return '<span class="badge ' + config.class + '">' + config.text + '</span>';
   }
+
   async renderDevicesPage(container) {
     container.innerHTML = '<div class="page-header">' +
     '<h2 class="page-title">设备台账</h2>' +
@@ -154,21 +159,22 @@ class App {
 
   async loadDevices() {
     try {
-      const devices = await this.apiRequest('/devices');
+      const result = await this.apiRequest('/devices');
+      const devices = result.data || result;
+      this.devices = devices;
       const tableContainer = document.getElementById('devices-table-container');
       if (!devices || devices.length === 0) {
         tableContainer.innerHTML = '<div class="empty-state"><p>暂无设备数据</p></div>';
         return;
       }
-      let html = '<table><thead><tr><th>设备编号</th><th>设备名称</th><th>规格型号</th><th>状态</th><th>所属部门</th><th>存放位置</th><th>操作</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>设备编号</th><th>设备名称</th><th>设备类型</th><th>规格型号</th><th>状态</th><th>操作</th></tr></thead><tbody>';
       devices.forEach(device => {
         html += '<tr>' +
-          '<td>' + (device.device_code || '-') + '</td>' +
+          '<td>' + (device.code || '-') + '</td>' +
           '<td>' + (device.name || '-') + '</td>' +
-          '<td>' + (device.specification || '-') + '</td>' +
-          '<td>' + this.getStatusBadge(device.status || 'active') + '</td>' +
-          '<td>' + (device.department || '-') + '</td>' +
-          '<td>' + (device.location || '-') + '</td>' +
+          '<td>' + (device.type || '-') + '</td>' +
+          '<td>' + (device.model || '-') + '</td>' +
+          '<td>' + this.getStatusBadge(device.status || 'available') + '</td>' +
           '<td>' +
             '<button class="btn-secondary btn-sm edit-device" data-id="' + device.id + '">编辑</button> ' +
             '<button class="btn-danger btn-sm delete-device" data-id="' + device.id + '">删除</button>' +
@@ -192,45 +198,40 @@ class App {
     const title = isEdit ? '编辑设备' : '新增设备';
     const content = '<div class="form-group">' +
     '<label class="form-label">设备编号 *</label>' +
-    '<input type="text" id="device-code" class="form-input" value="' + (device?.device_code || '') + '" placeholder="请输入设备编号">' +
+    '<input type="text" id="device-code" class="form-input" value="' + (device?.code || '') + '" placeholder="请输入设备编号">' +
     '</div>' +
     '<div class="form-group">' +
     '<label class="form-label">设备名称 *</label>' +
     '<input type="text" id="device-name" class="form-input" value="' + (device?.name || '') + '" placeholder="请输入设备名称">' +
     '</div>' +
     '<div class="form-group">' +
+    '<label class="form-label">设备类型 *</label>' +
+    '<input type="text" id="device-type" class="form-input" value="' + (device?.type || '') + '" placeholder="请输入设备类型">' +
+    '</div>' +
+    '<div class="form-group">' +
     '<label class="form-label">规格型号</label>' +
-    '<input type="text" id="device-spec" class="form-input" value="' + (device?.specification || '') + '" placeholder="请输入规格型号">' +
+    '<input type="text" id="device-model" class="form-input" value="' + (device?.model || '') + '" placeholder="请输入规格型号">' +
     '</div>' +
     '<div class="form-group">' +
     '<label class="form-label">设备状态</label>' +
     '<select id="device-status" class="form-select">' +
-    '<option value="active"' + (device?.status === 'active' ? ' selected' : '') + '>正常</option>' +
+    '<option value="available"' + (device?.status === 'available' ? ' selected' : '') + '>可用</option>' +
     '<option value="inactive"' + (device?.status === 'inactive' ? ' selected' : '') + '>停用</option>' +
     '</select></div>' +
     '<div class="form-group">' +
-    '<label class="form-label">所属部门</label>' +
-    '<input type="text" id="device-dept" class="form-input" value="' + (device?.department || '') + '" placeholder="请输入所属部门">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">存放位置</label>' +
-    '<input type="text" id="device-location" class="form-input" value="' + (device?.location || '') + '" placeholder="请输入存放位置">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">备注</label>' +
-    '<textarea id="device-remark" class="form-textarea" placeholder="请输入备注">' + (device?.remark || '') + '</textarea>' +
+    '<label class="form-label">日租金</label>' +
+    '<input type="number" id="device-daily-rate" class="form-input" value="' + (device?.daily_rate || 0) + '" placeholder="请输入日租金">' +
     '</div>';
     this.showModal(title, content, async () => {
       const data = {
-        device_code: document.getElementById('device-code').value.trim(),
+        code: document.getElementById('device-code').value.trim(),
         name: document.getElementById('device-name').value.trim(),
-        specification: document.getElementById('device-spec').value.trim(),
+        type: document.getElementById('device-type').value.trim(),
+        model: document.getElementById('device-model').value.trim(),
         status: document.getElementById('device-status').value,
-        department: document.getElementById('device-dept').value.trim(),
-        location: document.getElementById('device-location').value.trim(),
-        remark: document.getElementById('device-remark').value.trim()
+        daily_rate: parseFloat(document.getElementById('device-daily-rate').value) || 0
       };
-      if (!data.device_code || !data.name) {
+      if (!data.code || !data.name || !data.type) {
         this.showToast('请填写必填项', 'error');
         return false;
       }
@@ -257,7 +258,8 @@ class App {
 
   async editDevice(id) {
     try {
-      const device = await this.apiRequest('/devices/' + id);
+      const result = await this.apiRequest('/devices/' + id);
+      const device = result.data || result;
       this.showDeviceModal(device);
     } catch (error) {
       console.error('获取设备详情失败:', error);
@@ -289,26 +291,27 @@ class App {
 
   async loadRentalOrders() {
     try {
-      const orders = await this.apiRequest('/rental-orders');
+      const result = await this.apiRequest('/rental-orders');
+      const orders = result.data || result;
+      this.rentalOrders = orders;
       const container = document.getElementById('rental-orders-container');
       if (!orders || orders.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>暂无租赁单数据</p></div>';
         return;
       }
-      let html = '<table><thead><tr><th>租赁单号</th><th>客户名称</th><th>租赁开始</th><th>租赁结束</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>租赁单号</th><th>关联合同</th><th>客户名称</th><th>状态</th><th>操作</th></tr></thead><tbody>';
       orders.forEach(order => {
         let actions = '';
         if (order.status === 'pending') {
           actions += '<button class="btn-primary btn-sm checkout-order" data-id="' + order.id + '">出库确认</button> ';
         }
-        if (order.status === 'checked_out') {
+        if (order.status === 'out') {
           actions += '<button class="btn-success btn-sm return-order" data-id="' + order.id + '">归还确认</button> ';
         }
         html += '<tr>' +
           '<td>' + (order.order_no || '-') + '</td>' +
+          '<td>' + (order.contract_id || '-') + '</td>' +
           '<td>' + (order.customer_name || '-') + '</td>' +
-          '<td>' + (order.start_date || '-') + '</td>' +
-          '<td>' + (order.end_date || '-') + '</td>' +
           '<td>' + this.getStatusBadge(order.status || 'pending') + '</td>' +
           '<td>' + actions + '</td>' +
         '</tr>';
@@ -330,7 +333,7 @@ class App {
     const confirmed = confirm('确定要确认出库吗？');
     if (!confirmed) return;
     try {
-      await this.apiRequest('/rental-orders/' + id + '/checkout', { method: 'PUT' });
+      await this.apiRequest('/rental-orders/' + id + '/checkout', { method: 'POST' });
       this.showToast('出库确认成功');
       this.loadRentalOrders();
     } catch (error) {
@@ -342,7 +345,7 @@ class App {
     const confirmed = confirm('确定要确认归还吗？');
     if (!confirmed) return;
     try {
-      await this.apiRequest('/rental-orders/' + id + '/confirm-return', { method: 'PUT' });
+      await this.apiRequest('/rental-orders/' + id + '/confirm-return', { method: 'POST' });
       this.showToast('归还确认成功');
       this.loadRentalOrders();
     } catch (error) {
@@ -367,20 +370,24 @@ class App {
 
   async loadInspections() {
     try {
-      const inspections = await this.apiRequest('/inspections');
+      const result = await this.apiRequest('/inspections');
+      const inspections = result.data || result;
       const container = document.getElementById('inspections-container');
       if (!inspections || inspections.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>暂无巡检记录</p></div>';
         return;
       }
-      let html = '<table><thead><tr><th>巡检编号</th><th>设备名称</th><th>巡检日期</th><th>巡检人</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>设备名称</th><th>巡检人</th><th>巡检时间</th><th>是否损坏</th><th>状态</th><th>操作</th></tr></thead><tbody>';
       inspections.forEach(inspection => {
+        const device = this.devices.find(d => d.id === inspection.device_id);
+        const hasDamageText = inspection.has_damage === 1 ? '是' : '否';
+        const hasDamageClass = inspection.has_damage === 1 ? 'badge-red' : 'badge-green';
         html += '<tr>' +
-          '<td>' + (inspection.inspection_no || '-') + '</td>' +
-          '<td>' + (inspection.device_name || '-') + '</td>' +
-          '<td>' + (inspection.inspection_date || '-') + '</td>' +
+          '<td>' + (device?.name || inspection.device_id || '-') + '</td>' +
           '<td>' + (inspection.inspector || '-') + '</td>' +
-          '<td>' + this.getStatusBadge(inspection.status || 'pending') + '</td>' +
+          '<td>' + (inspection.inspect_time || '-') + '</td>' +
+          '<td><span class="badge ' + hasDamageClass + '">' + hasDamageText + '</span></td>' +
+          '<td>' + this.getStatusBadge(inspection.status || 'draft') + '</td>' +
           '<td><button class="btn-secondary btn-sm upload-photo" data-id="' + inspection.id + '">上传照片</button></td>' +
         '</tr>';
       });
@@ -394,58 +401,85 @@ class App {
     }
   }
 
-  showInspectionModal() {
-    const content = '<div class="form-group">' +
-    '<label class="form-label">巡检编号 *</label>' +
-    '<input type="text" id="inspection-no" class="form-input" placeholder="请输入巡检编号">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">设备名称 *</label>' +
-    '<input type="text" id="inspection-device" class="form-input" placeholder="请输入设备名称">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">巡检日期 *</label>' +
-    '<input type="date" id="inspection-date" class="form-input">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">巡检人</label>' +
-    '<input type="text" id="inspection-inspector" class="form-input" placeholder="请输入巡检人">' +
-    '</div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">巡检结果</label>' +
-    '<select id="inspection-result" class="form-select">' +
-    '<option value="normal">正常</option>' +
-    '<option value="abnormal">异常</option>' +
-    '</select></div>' +
-    '<div class="form-group">' +
-    '<label class="form-label">备注</label>' +
-    '<textarea id="inspection-remark" class="form-textarea" placeholder="请输入备注"></textarea>' +
-    '</div>';
-    this.showModal('创建巡检', content, async () => {
-      const data = {
-        inspection_no: document.getElementById('inspection-no').value.trim(),
-        device_name: document.getElementById('inspection-device').value.trim(),
-        inspection_date: document.getElementById('inspection-date').value,
-        inspector: document.getElementById('inspection-inspector').value.trim(),
-        result: document.getElementById('inspection-result').value,
-        remark: document.getElementById('inspection-remark').value.trim(),
-        status: 'completed'
-      };
-      if (!data.inspection_no || !data.device_name || !data.inspection_date) {
-        this.showToast('请填写必填项', 'error');
-        return false;
-      }
-      try {
-        await this.apiRequest('/inspections', {
-          method: 'POST',
-          body: JSON.stringify(data)
-        });
-        this.showToast('巡检创建成功');
-        this.loadInspections();
-      } catch (error) {
-        return false;
-      }
-    });
+  async showInspectionModal() {
+    try {
+      const [devicesResult, ordersResult] = await Promise.all([
+        this.apiRequest('/devices'),
+        this.apiRequest('/rental-orders')
+      ]);
+      const devices = devicesResult.data || devicesResult;
+      const orders = ordersResult.data || ordersResult;
+      
+      const deviceOptions = devices.map(d => 
+        '<option value="' + d.id + '">' + d.code + ' - ' + d.name + '</option>'
+      ).join('');
+      
+      const orderOptions = orders.map(o => 
+        '<option value="' + o.id + '">' + o.order_no + '</option>'
+      ).join('');
+
+      const content = '<div class="form-group">' +
+      '<label class="form-label">租赁单 *</label>' +
+      '<select id="inspection-rental-order" class="form-select">' +
+      '<option value="">请选择租赁单</option>' +
+      orderOptions +
+      '</select></div>' +
+      '<div class="form-group">' +
+      '<label class="form-label">设备 *</label>' +
+      '<select id="inspection-device" class="form-select">' +
+      '<option value="">请选择设备</option>' +
+      deviceOptions +
+      '</select></div>' +
+      '<div class="form-group">' +
+      '<label class="form-label">巡检时间</label>' +
+      '<input type="datetime-local" id="inspection-time" class="form-input">' +
+      '</div>' +
+      '<div class="form-group">' +
+      '<label class="form-label">巡检人</label>' +
+      '<input type="text" id="inspection-inspector" class="form-input" placeholder="请输入巡检人">' +
+      '</div>' +
+      '<div class="form-group">' +
+      '<label class="form-label">是否损坏</label>' +
+      '<select id="inspection-has-damage" class="form-select">' +
+      '<option value="0">否</option>' +
+      '<option value="1">是</option>' +
+      '</select></div>' +
+      '<div class="form-group">' +
+      '<label class="form-label">损坏描述</label>' +
+      '<textarea id="inspection-damage-desc" class="form-textarea" placeholder="请输入损坏描述"></textarea>' +
+      '</div>';
+
+      this.showModal('创建巡检', content, async () => {
+        const rental_order_id = document.getElementById('inspection-rental-order').value;
+        const device_id = document.getElementById('inspection-device').value;
+        const inspect_time = document.getElementById('inspection-time').value;
+        const data = {
+          rental_order_id: rental_order_id ? parseInt(rental_order_id) : null,
+          device_id: device_id ? parseInt(device_id) : null,
+          inspector: document.getElementById('inspection-inspector').value.trim(),
+          inspect_time: inspect_time ? new Date(inspect_time).toISOString() : null,
+          has_damage: parseInt(document.getElementById('inspection-has-damage').value),
+          damage_description: document.getElementById('inspection-damage-desc').value.trim(),
+          status: 'confirmed'
+        };
+        if (!data.rental_order_id || !data.device_id) {
+          this.showToast('请选择租赁单和设备', 'error');
+          return false;
+        }
+        try {
+          await this.apiRequest('/inspections', {
+            method: 'POST',
+            body: JSON.stringify(data)
+          });
+          this.showToast('巡检创建成功');
+          this.loadInspections();
+        } catch (error) {
+          return false;
+        }
+      });
+    } catch (error) {
+      console.error('加载表单数据失败:', error);
+    }
   }
 
   uploadPhoto(inspectionId) {
@@ -501,7 +535,8 @@ class App {
 
   async loadDamageClaims() {
     try {
-      const claims = await this.apiRequest('/damage-claims');
+      const result = await this.apiRequest('/damage-claims');
+      const claims = result.data || result;
       const container = document.getElementById('damage-claims-container');
       if (!claims || claims.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>暂无赔扣单数据</p></div>';
@@ -516,8 +551,8 @@ class App {
         html += '<tr>' +
           '<td>' + (claim.claim_no || '-') + '</td>' +
           '<td>' + (claim.rental_order_no || '-') + '</td>' +
-          '<td>¥' + (claim.amount || 0) + '</td>' +
-          '<td>' + (claim.reason || '-') + '</td>' +
+          '<td>¥' + (claim.claim_amount || claim.amount || 0) + '</td>' +
+          '<td>' + (claim.claim_reason || claim.reason || '-') + '</td>' +
           '<td>' + this.getStatusBadge(claim.status || 'pending') + '</td>' +
           '<td>' + actions + '</td>' +
         '</tr>';
@@ -560,13 +595,14 @@ class App {
 
   async loadContracts() {
     try {
-      const contracts = await this.apiRequest('/contracts');
+      const result = await this.apiRequest('/contracts');
+      const contracts = result.data || result;
       const container = document.getElementById('contracts-container');
       if (!contracts || contracts.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>暂无合同数据</p></div>';
         return;
       }
-      let html = '<table><thead><tr><th>合同编号</th><th>合同名称</th><th>客户名称</th><th>签订日期</th><th>到期日期</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>合同编号</th><th>客户名称</th><th>项目名称</th><th>开始日期</th><th>结束日期</th><th>状态</th><th>操作</th></tr></thead><tbody>';
       contracts.forEach(contract => {
         let actions = '';
         if (contract.status !== 'archived') {
@@ -574,11 +610,11 @@ class App {
         }
         html += '<tr>' +
           '<td>' + (contract.contract_no || '-') + '</td>' +
-          '<td>' + (contract.name || '-') + '</td>' +
           '<td>' + (contract.customer_name || '-') + '</td>' +
-          '<td>' + (contract.sign_date || '-') + '</td>' +
-          '<td>' + (contract.expire_date || '-') + '</td>' +
-          '<td>' + this.getStatusBadge(contract.status || 'active') + '</td>' +
+          '<td>' + (contract.project_name || '-') + '</td>' +
+          '<td>' + (contract.start_date || '-') + '</td>' +
+          '<td>' + (contract.end_date || '-') + '</td>' +
+          '<td>' + this.getStatusBadge(contract.status || 'draft') + '</td>' +
           '<td>' + actions + '</td>' +
         '</tr>';
       });
@@ -596,7 +632,7 @@ class App {
     const confirmed = confirm('确定要归档该合同吗？归档后将无法修改。');
     if (!confirmed) return;
     try {
-      await this.apiRequest('/contracts/' + id + '/archive', { method: 'PUT' });
+      await this.apiRequest('/contracts/' + id + '/archive', { method: 'POST' });
       this.showToast('合同归档成功');
       this.loadContracts();
     } catch (error) {

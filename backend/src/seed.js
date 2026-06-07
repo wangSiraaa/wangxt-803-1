@@ -1,6 +1,24 @@
 const { db } = require('./models/database');
 
 function seedDatabase() {
+  db.pragma('foreign_keys = OFF');
+
+  const clearTables = db.transaction(() => {
+    db.prepare('DELETE FROM damage_claims').run();
+    db.prepare('DELETE FROM inspection_photos').run();
+    db.prepare('DELETE FROM inspections').run();
+    db.prepare('DELETE FROM rental_order_items').run();
+    db.prepare('DELETE FROM rental_orders').run();
+    db.prepare('DELETE FROM return_confirmations').run();
+    db.prepare('DELETE FROM contracts').run();
+    db.prepare('DELETE FROM devices').run();
+  });
+
+  clearTables();
+  console.log('已清空所有表数据');
+
+  db.pragma('foreign_keys = ON');
+
   const insertDevice = db.prepare(
     'INSERT INTO devices (code, name, type, model, status, daily_rate) VALUES (?, ?, ?, ?, ?, ?)'
   );
