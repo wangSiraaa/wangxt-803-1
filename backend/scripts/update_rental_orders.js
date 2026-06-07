@@ -1,20 +1,28 @@
-const express = require('express');
+const fs = require('fs');
+
+const content = `const express = require('express');
 const router = express.Router();
 const { db } = require('../models/database');
-
 const { validateReshootSubmit, validateReshootReview } = require('../middleware/validation');
 
-router.get('/reshoot/todo', (req, res) => {
+router.get('/', (req, res) => {
   try {
-    const orders = db.prepare("SELECT ro.*, c.contract_no, c.customer_name, c.project_name FROM rental_orders ro LEFT JOIN contracts c ON ro.contract_id = c.id WHERE ro.reshoot_status = 'pending' ORDER BY ro.reshoot_submit_time DESC").all();
+    const orders = db.prepare('SELECT * FROM rental_orders ORDER BY created_at DESC').all();
     res.json({ success: true, data: orders });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-router.get('/', (req, res) => {
+
+router.get('/reshoot/todo', (req, res) => {
   try {
-    const orders = db.prepare('SELECT * FROM rental_orders ORDER BY created_at DESC').all();
+    const orders = db.prepare(\`
+      SELECT ro.*, c.contract_no, c.customer_name, c.project_name
+      FROM rental_orders ro
+      LEFT JOIN contracts c ON ro.contract_id = c.id
+      WHERE ro.reshoot_status = 'pending'
+      ORDER BY ro.reshoot_submit_time DESC
+    \`).all();
     res.json({ success: true, data: orders });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -31,8 +39,21 @@ router.get('/:id', (req, res) => {
       'SELECT roi.*, d.code, d.name, d.type FROM rental_order_items roi JOIN devices d ON roi.device_id = d.id WHERE roi.rental_order_id = ?'
     ).all(req.params.id);
     const confirmation = db.prepare('SELECT * FROM return_confirmations WHERE rental_order_id = ?').get(req.params.id);
-    const reshootInspections = db.prepare('SELECT i.* FROM inspections i WHERE i.rental_order_id = ? AND i.is_reshoot = 1 ORDER BY i.created_at DESC').all(req.params.id);
-    res.json({ success: true, data: { ...order, items, return_confirmation: confirmation || null, reshoot_inspections: reshootInspections } });
+    const reshootInspections = db.prepare(\`
+      SELECT i.*
+      FROM inspections i
+      WHERE i.rental_order_id = ? AND i.is_reshoot = 1
+      ORDER BY i.created_at DESC
+    \`).all(req.params.id);
+    res.json({ 
+      success: true, 
+      data: { 
+        ...order, 
+        items, 
+        return_confirmation: confirmation || null,
+        reshoot_inspections: reshootInspections
+      } 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -165,3 +186,93 @@ router.post('/:id/confirm-return', (req, res) => {
   }
 });
 
+router.post('/:id/reshoot-submit', validateReshootSubmit, (req, res) => {
+  try {
+    const { remark, submitter, inspection_ids } = req.body;
+    const now = new Date().toISOString();
+    const orderId = req.params.id;
+
+    const updateOrder = db.prepare(\`
+      UPDATE rental_orders 
+      SET reshoot_status = 'pending', 
+          reshoot_remark = ?, 
+          reshoot_submit_time = ?, 
+          reshoot_submitter = ?
+      WHERE id = ?
+    \`);
+    updateOrder.run(remark || null, now, submitter || '技师', orderId);
+
+    if (inspection_ids && inspection_ids.length > 0) {
+      const updateInspection = db.prepare('UPDATE inspections SET is_reshoot = 1 WHERE id = ?');
+      for (const inspId of inspection_ids) {
+        updateInspection.run(inspId);
+      }
+    }
+
+    const order = db.prepare('SELECT * FROM rental_orders WHERE id = ?').get(orderId);
+    res.json({ 
+      success: true, 
+      data: order, 
+      message: '补拍申请提交成功，待客户经理复核' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/:id/reshoot-confirm', validateReshootReview, (req, res) => {
+  try {
+    const { reviewer } = req.body;
+    const now = new Date().toISOString();
+    const orderId = req.params.id;
+
+    db.prepare(\`
+      UPDATE rental_orders 
+      SET reshoot_status = 'confirmed', 
+          reshoot_review_time = ?, 
+          reshoot_reviewer = ?
+      WHERE id = ?
+    \`).run(now, reviewer || '客户经理', orderId);
+
+    const order = db.prepare('SELECT * FROM rental_orders WHERE id = ?').get(orderId);
+    res.json({ 
+      success: true, 
+      data: order, 
+      message: '补拍申请已确认，财务可调整赔扣单' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/:id/reshoot-reject', validateReshootReview, (req, res) => {
+  try {
+    const { reviewer, reject_reason } = req.body;
+    const now = new Date().toISOString();
+    const orderId = req.params.id;
+
+    db.prepare(\`
+      UPDATE rental_orders 
+      SET reshoot_status = 'rejected', 
+          reshoot_review_time = ?, 
+          reshoot_reviewer = ?,
+          reshoot_reject_reason = ?
+      WHERE id = ?
+    \`).run(now, reviewer || '客户经理', reject_reason || null, orderId);
+
+    const order = db.prepare('SELECT * FROM rental_orders WHERE id = ?').get(orderId);
+    res.json({ 
+      success: true, 
+      data: order, 
+      message: '补拍申请已退回' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;
+`;
+
+fs.writeFileSync('src/routes/rentalOrders.js', content);
+console.log('rentalOrders.js updated successfully');

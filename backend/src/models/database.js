@@ -49,6 +49,13 @@ function initDatabase() {
       out_time DATETIME,
       return_operator TEXT,
       return_time DATETIME,
+      reshoot_status TEXT,
+      reshoot_remark TEXT,
+      reshoot_submit_time DATETIME,
+      reshoot_submitter TEXT,
+      reshoot_review_time DATETIME,
+      reshoot_reviewer TEXT,
+      reshoot_reject_reason TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (contract_id) REFERENCES contracts(id)
     );
@@ -74,6 +81,7 @@ function initDatabase() {
       has_damage INTEGER DEFAULT 0,
       damage_description TEXT,
       status TEXT DEFAULT 'draft',
+      is_reshoot INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (rental_order_id) REFERENCES rental_orders(id),
       FOREIGN KEY (device_id) REFERENCES devices(id)
@@ -111,6 +119,28 @@ function initDatabase() {
       FOREIGN KEY (inspection_id) REFERENCES inspections(id)
     );
   `);
+
+  const columns = db.pragma("table_info(rental_orders)");
+  const colNames = columns.map(c => c.name);
+  if (!colNames.includes('reshoot_status')) {
+    db.exec(`
+      ALTER TABLE rental_orders ADD COLUMN reshoot_status TEXT;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_remark TEXT;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_submit_time DATETIME;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_submitter TEXT;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_review_time DATETIME;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_reviewer TEXT;
+      ALTER TABLE rental_orders ADD COLUMN reshoot_reject_reason TEXT;
+    `);
+  }
+
+  const inspColumns = db.pragma("table_info(inspections)");
+  const inspColNames = inspColumns.map(c => c.name);
+  if (!inspColNames.includes('is_reshoot')) {
+    db.exec(`
+      ALTER TABLE inspections ADD COLUMN is_reshoot INTEGER DEFAULT 0;
+    `);
+  }
 
   console.log('数据库初始化完成');
 }

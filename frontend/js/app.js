@@ -57,6 +57,9 @@ class App {
         break;
       case 'contracts':
         this.renderContractsPage(mainContent);
+      case 'reshoot-review':
+        this.renderReshootReviewPage(mainContent);
+        break;
         break;
       default:
         this.renderDevicesPage(mainContent);

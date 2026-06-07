@@ -34,4 +34,55 @@ function validateContractArchive(req, res, next) {
   next();
 }
 
-module.exports = { validateInspectionCreation, validateDamageClaim, validateContractArchive };
+function validateReshootSubmit(req, res, next) {
+  const { id } = req.params;
+  const order = db.prepare(`
+    SELECT ro.*, c.archived, c.status as contract_status 
+    FROM rental_orders ro 
+    LEFT JOIN contracts c ON ro.contract_id = c.id 
+    WHERE ro.id = ?
+  `).get(id);
+  if (!order) return res.status(404).json({ error: '租赁单不存在' });
+  if (order.archived === 1 || order.contract_status === 'archived') {
+    return res.status(400).json({ error: '已归档合同不允许提交补拍申请' });
+  }
+  if (order.reshoot_status === 'pending') {
+    return res.status(400).json({ error: '该租赁单已有补拍申请待复核' });
+  }
+  next();
+}
+
+function validateReshootReview(req, res, next) {
+  const { id } = req.params;
+  const order = db.prepare('SELECT * FROM rental_orders WHERE id = ?').get(id);
+  if (!order) return res.status(404).json({ error: '租赁单不存在' });
+  if (order.reshoot_status !== 'pending') {
+    return res.status(400).json({ error: '该租赁单没有待复核的补拍申请' });
+  }
+  next();
+}
+
+function validateDamageClaimAdjust(req, res, next) {
+  const { id } = req.params;
+  const claim = db.prepare(`
+    SELECT dc.*, ro.reshoot_status 
+    FROM damage_claims dc 
+    JOIN inspections i ON dc.inspection_id = i.id 
+    JOIN rental_orders ro ON i.rental_order_id = ro.id 
+    WHERE dc.id = ?
+  `).get(id);
+  if (!claim) return res.status(404).json({ error: '赔扣单不存在' });
+  if (claim.reshoot_status && claim.reshoot_status !== 'confirmed') {
+    return res.status(400).json({ error: '补拍申请未确认前，财务不得调整赔扣单' });
+  }
+  next();
+}
+
+module.exports = { 
+  validateInspectionCreation, 
+  validateDamageClaim, 
+  validateContractArchive,
+  validateReshootSubmit,
+  validateReshootReview,
+  validateDamageClaimAdjust
+};

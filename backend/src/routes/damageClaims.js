@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../models/database');
-const { validateDamageClaim } = require('../middleware/validation');
+const { validateDamageClaim, validateDamageClaimAdjust } = require('../middleware/validation');
 
 router.get('/', (req, res) => {
   try {
@@ -44,7 +44,7 @@ router.post('/', validateDamageClaim, (req, res) => {
   }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateDamageClaimAdjust, (req, res) => {
   try {
     const { status, accountant } = req.body;
     const result = db.prepare(
