@@ -1,0 +1,13 @@
+{
+  "name": "stage-lighting-rental",
+  "version": "1.0.0",
+  "description": "舞台灯光设备租赁巡检赔扣全栈应用",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "seed": "node scripts/seed.js",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "e2e:test": "node scripts/e2e-test.js"
+  }
+}
